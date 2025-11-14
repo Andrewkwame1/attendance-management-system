@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
 import 'package:myapp/main.dart';
+import 'package:myapp/theme.dart';
 
 void main() {
   testWidgets('Role selection smoke test', (WidgetTester tester) async {

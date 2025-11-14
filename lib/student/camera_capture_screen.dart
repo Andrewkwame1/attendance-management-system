@@ -22,19 +22,34 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
   }
 
   Future<void> _initializeCamera() async {
-    final cameras = await availableCameras();
-    // Using the front camera
-    final firstCamera = cameras.firstWhere(
-        (camera) => camera.lensDirection == CameraLensDirection.front);
+    try {
+      developer.log('Initializing camera...', name: 'camera.init');
+      final cameras = await availableCameras();
+      // Using the front camera
+      final firstCamera = cameras.firstWhere(
+          (camera) => camera.lensDirection == CameraLensDirection.front);
 
-    _controller = CameraController(
-      firstCamera,
-      ResolutionPreset.medium,
-    );
+      _controller = CameraController(
+        firstCamera,
+        ResolutionPreset.medium,
+      );
 
-    _initializeControllerFuture = _controller.initialize();
-    if (mounted) {
-      setState(() {});
+      _initializeControllerFuture = _controller.initialize();
+      await _initializeControllerFuture;
+
+      developer.log('Camera initialized successfully.', name: 'camera.init');
+
+      if (mounted) {
+        setState(() {});
+      }
+    } catch (e, s) {
+      developer.log(
+        'Error initializing camera',
+        name: 'camera.init',
+        error: e,
+        stackTrace: s,
+        level: 1000, // SEVERE
+      );
     }
   }
 
@@ -47,24 +62,34 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
   void _takePicture() async {
     try {
       await _initializeControllerFuture;
-      await _controller.takePicture();
+      developer.log('Taking picture...', name: 'camera.capture');
+      final image = await _controller.takePicture();
 
       setState(() {
         _captureCount++;
       });
+      
+      developer.log(
+        'Picture $_captureCount taken successfully at path: ${image.path}',
+        name: 'camera.capture',
+      );
 
       if (_captureCount >= 3) {
+        developer.log(
+          'All 3 pictures taken. Navigating to confirmation.',
+          name: 'camera.capture',
+        );
         if (mounted) {
-          // TODO: Navigate to a confirmation screen
           context.go('/student/enrollment/confirmation');
         }
       }
     } catch (e, s) {
       developer.log(
         'Error taking picture',
-        name: 'camera_capture',
+        name: 'camera.capture',
         error: e,
         stackTrace: s,
+        level: 1000, // SEVERE
       );
     }
   }
@@ -78,7 +103,7 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
       body: FutureBuilder<void>(
         future: _initializeControllerFuture,
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.done) {
+          if (snapshot.connectionState == ConnectionState.done && _controller.value.errorDescription == null) {
             return Column(
               children: [
                 Expanded(
@@ -86,11 +111,30 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
                 ),
                 Padding(
                   padding: const EdgeInsets.all(20.0),
-                  child: Text('Captures: $_captureCount/3'),
+                  child: Text(
+                    'Captures: $_captureCount/3',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
                 ),
               ],
             );
-          } else {
+          } else if (snapshot.hasError) {
+             return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.error, color: Colors.red, size: 50),
+                  const SizedBox(height: 10),
+                  const Text('Error initializing camera.'),
+                   Text(
+                    '${snapshot.error}',
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            );
+          }
+          else {
             return const Center(child: CircularProgressIndicator());
           }
         },
