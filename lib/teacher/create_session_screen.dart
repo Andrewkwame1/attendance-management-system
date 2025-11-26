@@ -1,6 +1,11 @@
+import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:go_router/go_router.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+
+import '../notifications.dart';
 
 class CreateSessionScreen extends StatefulWidget {
   const CreateSessionScreen({super.key});
@@ -16,7 +21,8 @@ class _CreateSessionScreenState extends State<CreateSessionScreen> {
   final _lecturerNameController = TextEditingController();
   DateTime? _startTime;
   DateTime? _endTime;
-  // Geofence fields will be added later
+  LatLng? _selectedLocation;
+  double _radius = 100;
 
   bool _isLoading = false;
 
@@ -28,6 +34,7 @@ class _CreateSessionScreenState extends State<CreateSessionScreen> {
       lastDate: DateTime(2101),
     );
     if (picked != null) {
+      if (!context.mounted) return;
       final TimeOfDay? pickedTime = await showTimePicker(
         context: context,
         initialTime: TimeOfDay.fromDateTime(DateTime.now()),
@@ -65,6 +72,12 @@ class _CreateSessionScreenState extends State<CreateSessionScreen> {
         );
         return;
       }
+      if (_selectedLocation == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please select a location')),
+        );
+        return;
+      }
 
       setState(() {
         _isLoading = true;
@@ -73,11 +86,16 @@ class _CreateSessionScreenState extends State<CreateSessionScreen> {
       try {
         final user = FirebaseAuth.instance.currentUser;
         if (user == null) {
-          // This should not happen if routes are protected
+          if (mounted) {
+            setState(() => _isLoading = false);
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('You must be logged in to create a session.')),
+            );
+          }
           return;
         }
 
-        await FirebaseFirestore.instance.collection('sessions').add({
+        final newSessionRef = await FirebaseFirestore.instance.collection('sessions').add({
           'courseName': _courseNameController.text,
           'className': _classNameController.text,
           'lecturerName': _lecturerNameController.text,
@@ -85,20 +103,34 @@ class _CreateSessionScreenState extends State<CreateSessionScreen> {
           'endTime': _endTime,
           'teacherId': user.uid,
           'createdAt': FieldValue.serverTimestamp(),
+          'location': GeoPoint(_selectedLocation!.latitude, _selectedLocation!.longitude),
+          'radius': _radius,
         });
 
+        await NotificationService.scheduleNotification(
+          id: newSessionRef.id.hashCode,
+          title: 'Upcoming Class: ${_courseNameController.text}',
+          body: 'Your ${_classNameController.text} class is about to start.',
+          scheduledDate: _startTime!.subtract(const Duration(minutes: 15)), // 15 minutes before start time
+        );
+
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Session created successfully')),
         );
-        Navigator.pop(context); // Go back to the previous screen
+        context.go('/teacher/session/${newSessionRef.id}');
       } catch (e) {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to create session: $e')),
         );
+        developer.log('Failed to create session', error: e);
       } finally {
-        setState(() {
-          _isLoading = false;
-        });
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+          });
+        }
       }
     }
   }
@@ -147,6 +179,53 @@ class _CreateSessionScreenState extends State<CreateSessionScreen> {
                 title: Text('End Time: ${_endTime?.toString() ?? 'Not set'}'),
                 trailing: const Icon(Icons.calendar_today),
                 onTap: () => _selectDateTime(context, false),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                height: 300,
+                child: GoogleMap(
+                  initialCameraPosition: const CameraPosition(
+                    target: LatLng(37.7749, -122.4194), // Default to San Francisco
+                    zoom: 12,
+                  ),
+                  onTap: (location) {
+                    setState(() {
+                      _selectedLocation = location;
+                    });
+                  },
+                  markers: {
+                    if (_selectedLocation != null)
+                      Marker(
+                        markerId: const MarkerId('selected-location'),
+                        position: _selectedLocation!,
+                      ),
+                  },
+                  circles: {
+                    if (_selectedLocation != null)
+                      Circle(
+                        circleId: const CircleId('radius'),
+                        center: _selectedLocation!,
+                        radius: _radius,
+                        fillColor: Colors.blue.withAlpha(77),
+                        strokeColor: Colors.blue,
+                        strokeWidth: 2,
+                      ),
+                  },
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text('Radius: ${_radius.toInt()} meters'),
+              Slider(
+                value: _radius,
+                min: 50,
+                max: 500,
+                divisions: 9,
+                label: '${_radius.toInt()} m',
+                onChanged: (value) {
+                  setState(() {
+                    _radius = value;
+                  });
+                },
               ),
               const SizedBox(height: 32),
               _isLoading

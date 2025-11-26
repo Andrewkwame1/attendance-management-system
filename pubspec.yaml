@@ -53,6 +53,16 @@ dependencies:
   cloud_firestore: ^6.1.0
   firebase_storage: ^13.0.4
   image: ^3.3.0
+  qr_flutter: ^4.1.0
+  google_maps_flutter: ^2.14.0
+  google_mlkit_face_detection: ^0.13.1
+  firebase_remote_config: ^6.1.2
+  intl: ^0.20.2
+  csv: ^6.0.0
+  path_provider: ^2.1.5
+  open_file: ^3.5.10
+  flutter_local_notifications: ^19.5.0
+  timezone: ^0.10.1
 
 dev_dependencies:
   flutter_test:

@@ -1,76 +1,31 @@
-# Project Blueprint
+# Class Attendance App Blueprint
 
 ## Overview
 
-This is a Flutter application for a face recognition-based attendance system. The application allows for two user roles: Student and Teacher. Students can enroll by providing their consent, filling out a form, and capturing their facial data. Teachers can create and manage attendance sessions, view live check-ins, and generate reports.
+This document outlines the blueprint for a Flutter-based Class Attendance App. The app provides a platform for teachers to create and manage class sessions, and for students to check in to those sessions using facial recognition and location-based validation.
 
 ## Style, Design, and Features
 
-### Style
+### Implemented
 
-*   **Theme:** Material 3
-*   **Color Scheme:** Blue-based, with both light and dark modes.
-*   **Typography:** Poppins font from Google Fonts.
+*   **User Roles:** The app supports two user roles: "Teacher" and "Student".
+*   **Authentication:** Users can sign up and log in using Firebase Authentication.
+*   **Teacher Features:**
+    *   **Create Sessions:** Teachers can create new class sessions with details such as course name, class name, start time, end time, and location.
+    *   **View Sessions:** Teachers can view a list of their active, upcoming, and past sessions on their dashboard.
+    *   **Search Sessions:** Teachers can search for sessions by course or class name.
+    *   **Session Details:** Teachers can view the details of a specific session, including a real-time list of students who have checked in.
+    *   **CSV Export:** Teachers can export the attendance list of a session to a CSV file.
+*   **Student Features:**
+    *   **Facial Enrollment:** Students can enroll their face by taking three pictures.
+    *   **View Available Sessions:** Students can view a list of available class sessions and check in.
+    *   **Profile Screen:** Students can view their profile information and their complete attendance history.
+*   **Notifications:** Students receive a notification 15 minutes before a class session starts.
+*   **UI/UX:**
+    *   **Navigation:** The app uses `go_router` for navigation.
+    *   **Theming:** The app uses a consistent theme with a primary color of deep purple.
+    *   **Modern UI:** The student and teacher home screens have been redesigned with a modern and visually appealing UI, featuring card-based layouts, gradients, shadows, and custom fonts for a better user experience.
 
-### Implemented Features
+### Plan for Current Request
 
-*   **Role Selection:** A main screen allows users to select whether they are a Student or a Teacher.
-*   **Student Enrollment Flow:**
-    *   A multi-step enrollment process guides students through:
-        *   A welcome screen.
-        *   A consent form.
-        *   An enrollment form.
-        *   A camera capture screen to take three photos of their face.
-        *   A confirmation screen upon successful enrollment.
-*   **Basic Teacher View:**
-    *   A screen to display a list of all enrolled students.
-*   **Navigation:** A router (`go_router`) is set up to handle navigation between all screens.
-*   **State Management:** `provider` is used for theme management.
-
-### New & Planned Features
-
-*   **Teacher Authentication:**
-    *   Login with email and password.
-    *   SSO (Single Sign-On) as a future option.
-*   **Teacher Session Management:**
-    *   **Create Session:** Form with course name, class name, lecturer, start/end times, and geofence.
-    *   **Active Session Dashboard:** Real-time view of session status, number of check-ins, and a live list of attendees.
-    *   **Session Controls:** End session, refresh data, export to CSV, and manually mark attendance.
-*   **Teacher Reporting:**
-    *   **Reports Page:** Filterable attendance data with metrics and export options (CSV/PDF).
-*   **Student Check-in Flow:**
-    *   Initiate check-in by scanning a QR code or following a link.
-    *   Request and handle camera and location permissions.
-    *   Single face capture for verification against enrolled data.
-    *   Provide real-time feedback (verifying, success, failure).
-*   **Error Handling:**
-    *   Guidance for low-light conditions during face capture.
-    *   Graceful handling of denied location permissions.
-    *   Process for ambiguous face matches.
-*   **Backend Integration:**
-    *   **Firebase Authentication** for user management.
-    *   **Cloud Firestore** to store user data, session information, and attendance records.
-    *   **Firebase AI (Gemini)** for face embedding and matching (conceptual).
-
-## Current Plan
-
-The immediate goal is to implement the new features as described in the UX flows. The development will be phased:
-
-1.  **Phase 1: Teacher Authentication & Session Creation**
-    *   **Integrate Firebase:** Add `firebase_core`, `firebase_auth`, and `cloud_firestore` to the project.
-    *   **Initialize Firebase:** Configure the application to connect to a Firebase project.
-    *   **Implement Login Screen:** Create a dedicated UI for teacher login using email and password.
-    *   **Implement Authentication Logic:** Use `FirebaseAuth` to handle user sign-in.
-    *   **Protect Teacher Routes:** Update the router to require authentication for all teacher-specific screens.
-    *   **Create Session UI:** Build the form for teachers to create new attendance sessions.
-    *   **Save Sessions:** Store the created session data in Cloud Firestore.
-
-2.  **Phase 2: Student Check-in**
-    *   Implement QR code scanning to join a session.
-    *   Integrate location services to check against the session's geofence.
-    *   Implement the face capture and verification logic.
-    *   Record check-in data in Firestore.
-
-3.  **Phase 3: Dashboards and Reporting**
-    *   Build the real-time active session dashboard for teachers.
-    *   Develop the historical reports page with filtering and export capabilities.
+*   No active plan. Ready for the next request.

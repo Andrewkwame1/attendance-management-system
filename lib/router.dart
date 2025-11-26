@@ -13,6 +13,8 @@ import 'package:myapp/teacher/enrolled_students_screen.dart';
 import 'package:myapp/teacher/login_screen.dart';
 import 'package:myapp/teacher/create_session_screen.dart';
 import 'package:myapp/teacher/active_session_screen.dart';
+import 'package:myapp/student/check_in_camera_screen.dart';
+import 'package:myapp/student/student_profile_screen.dart';
 
 final GoRouter router = GoRouter(
   redirect: (BuildContext context, GoRouterState state) {
@@ -43,6 +45,12 @@ final GoRouter router = GoRouter(
       path: '/student',
       builder: (BuildContext context, GoRouterState state) {
         return const StudentHomeScreen();
+      },
+    ),
+    GoRoute(
+      path: '/student/profile',
+      builder: (BuildContext context, GoRouterState state) {
+        return const StudentProfileScreen();
       },
     ),
     GoRoute(
@@ -104,6 +112,13 @@ final GoRouter router = GoRouter(
       path: '/teacher/enrolled-students',
       builder: (BuildContext context, GoRouterState state) {
         return const EnrolledStudentsScreen();
+      },
+    ),
+    GoRoute(
+      path: '/student/check-in/camera/:id',
+      builder: (BuildContext context, GoRouterState state) {
+        final String sessionId = state.pathParameters['id']!;
+        return CheckInCameraScreen(sessionId: sessionId);
       },
     ),
   ],

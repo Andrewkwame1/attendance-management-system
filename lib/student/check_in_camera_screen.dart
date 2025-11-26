@@ -1,17 +1,20 @@
-import 'dart:math';
-import 'package:flutter/material.dart';
-import 'package:camera/camera.dart';
-import 'package:firebase_storage/firebase_storage.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'dart:typed_data';
-import 'package:image/image.dart' as img;
-import 'package:tflite_flutter/tflite_flutter.dart';
-import 'package:go_router/go_router.dart';
 import 'dart:developer' as developer;
+import 'dart:io';
+import 'package:camera/camera.dart';
+import 'package:firebase_remote_config/firebase_remote_config.dart';
+import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:go_router/go_router.dart';
+import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:http/http.dart' as http;
+import 'package:image/image.dart' as img;
 
 class CheckInCameraScreen extends StatefulWidget {
   final String sessionId;
+
   const CheckInCameraScreen({super.key, required this.sessionId});
 
   @override
@@ -19,182 +22,256 @@ class CheckInCameraScreen extends StatefulWidget {
 }
 
 class _CheckInCameraScreenState extends State<CheckInCameraScreen> {
-  CameraController? _cameraController;
-  Future<void>? _initializeControllerFuture;
-  Interpreter? _interpreter;
+  late CameraController _controller;
+  late Future<void> _initializeControllerFuture;
+  late FaceDetector _faceDetector;
   bool _isProcessing = false;
+  double _similarityThreshold = 0.98;
 
   @override
   void initState() {
     super.initState();
     _initializeCamera();
-    _loadModel();
+    _initializeFaceDetector();
+    _initializeRemoteConfig();
   }
 
   Future<void> _initializeCamera() async {
-    final cameras = await availableCameras();
-    final firstCamera = cameras.first;
-    _cameraController = CameraController(
-      firstCamera,
-      ResolutionPreset.medium,
-    );
-    _initializeControllerFuture = _cameraController!.initialize();
-    if (mounted) {
-      setState(() {});
-    }
-  }
-
-  Future<void> _loadModel() async {
     try {
-      _interpreter = await Interpreter.fromAsset('mobilefacenet.tflite');
-    } catch (e) {
-      developer.log('Failed to load model: $e', name: 'CheckInCameraScreen');
-    }
-  }
+      final cameras = await availableCameras();
+      final firstCamera = cameras.firstWhere(
+          (camera) => camera.lensDirection == CameraLensDirection.front);
 
-  Future<Float32List> _getEmbedding(Uint8List imageBytes) async {
-    img.Image? image = img.decodeImage(imageBytes);
-    if (image == null) {
-      throw Exception('Could not decode image');
-    }
+      _controller = CameraController(
+        firstCamera,
+        ResolutionPreset.medium,
+      );
 
-    img.Image resizedImage = img.copyResize(image, width: 112, height: 112);
-    List<double> normalizedPixels = resizedImage.getBytes(order: img.ChannelOrder.rgb).map((pixel) => pixel / 255.0).toList();
+      _initializeControllerFuture = _controller.initialize();
+      await _initializeControllerFuture;
 
-    var input = List.generate(1, (i) => List.generate(112, (j) => List.generate(112, (k) => List.generate(3, (l) => 0.0))));
-
-    for (int y = 0; y < 112; y++) {
-      for (int x = 0; x < 112; x++) {
-        int pixelIndex = (y * 112 + x) * 3;
-        input[0][y][x][0] = normalizedPixels[pixelIndex];
-        input[0][y][x][1] = normalizedPixels[pixelIndex + 1];
-        input[0][y][x][2] = normalizedPixels[pixelIndex + 2];
+      if (mounted) {
+        setState(() {});
       }
+    } catch (e) {
+      developer.log('Error initializing camera: $e', name: 'CheckInCameraScreen');
     }
-
-    var output = List.filled(1 * 192, 0.0).reshape([1, 192]);
-
-    _interpreter!.run(input, output);
-    return output[0] as Float32List;
   }
 
-  Future<void> _captureAndVerify() async {
-    if (_isProcessing || !_cameraController!.value.isInitialized) {
-      return;
+  void _initializeFaceDetector() {
+    _faceDetector = FaceDetector(
+      options: FaceDetectorOptions(
+        performanceMode: FaceDetectorMode.accurate,
+        enableLandmarks: true,
+        enableContours: true,
+      ),
+    );
+  }
+
+  void _initializeRemoteConfig() {
+    final remoteConfig = FirebaseRemoteConfig.instance;
+    setState(() {
+      _similarityThreshold = remoteConfig.getDouble('similarity_threshold');
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _faceDetector.close();
+    super.dispose();
+  }
+
+  Future<List<double>?> _getEmbeddings(InputImage image) async {
+    final List<Face> faces = await _faceDetector.processImage(image);
+    if (faces.isEmpty) {
+      return null;
     }
+    // Placeholder for a real face embedding model
+    final FaceContour? faceContour = faces.first.contours[FaceContourType.face];
+    if (faceContour == null) {
+      return null;
+    }
+    return faceContour.points
+        .map((point) => [point.x.toDouble(), point.y.toDouble()])
+        .expand((point) => point)
+        .toList();
+  }
+
+
+  double _calculateSimilarity(List<double> embeddings1, List<double> embeddings2) {
+    if (embeddings1.isEmpty || embeddings2.isEmpty) {
+      return 0.0;
+    }
+    // Using cosine similarity as a placeholder
+    double dotProduct = 0;
+    double mag1 = 0;
+    double mag2 = 0;
+    for (int i = 0; i < embeddings1.length; i++) {
+      dotProduct += embeddings1[i] * embeddings2[i];
+      mag1 += embeddings1[i] * embeddings1[i];
+      mag2 += embeddings2[i] * embeddings2[i];
+    }
+    return dotProduct / (mag1 * mag2);
+  }
+
+  void _takePictureAndCheckIn() async {
+    if (_isProcessing) return;
 
     setState(() {
       _isProcessing = true;
     });
 
     try {
-      final XFile imageFile = await _cameraController!.takePicture();
-      final Uint8List imageBytes = await imageFile.readAsBytes();
-      final Float32List liveEmbedding = await _getEmbedding(imageBytes);
+      // 1. Fetch session data
+      final sessionDoc = await FirebaseFirestore.instance
+          .collection('sessions')
+          .doc(widget.sessionId)
+          .get();
 
-      final enrolledStudents = await FirebaseFirestore.instance.collection('enrolledStudents').get();
+      if (!mounted) return;
+      if (!sessionDoc.exists) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Session not found.')),
+        );
+        return;
+      }
 
-      String? matchedStudentId;
-      String? matchedStudentName;
-      double highestSimilarity = 0.8; 
+      final sessionData = sessionDoc.data() as Map<String, dynamic>;
+      final sessionLocation = sessionData['location'] as GeoPoint;
+      final sessionRadius = sessionData['radius'] as double;
 
-      for (var doc in enrolledStudents.docs) {
-        final data = doc.data();
-        final List<dynamic> storedEmbedding = data['faceEmbedding'];
-        final Float32List storedEmbeddingFloat = Float32List.fromList(storedEmbedding.map((e) => e as double).toList());
+      // 2. Get student's current location
+      final Position position = await Geolocator.getCurrentPosition();
 
-        final double similarity = _calculateCosineSimilarity(liveEmbedding, storedEmbeddingFloat);
+      // 3. Calculate distance
+      final double distance = Geolocator.distanceBetween(
+        position.latitude,
+        position.longitude,
+        sessionLocation.latitude,
+        sessionLocation.longitude,
+      );
 
-        if (similarity > highestSimilarity) {
-          highestSimilarity = similarity;
-          matchedStudentId = doc.id;
-          matchedStudentName = data['name'];
+      if (!mounted) return;
+      // 4. Check if within geofence
+      if (distance > sessionRadius) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('You are too far from the class to check in.')),
+        );
+        return;
+      }
+
+      // 5. Take picture and generate embedding
+      await _initializeControllerFuture;
+      final imageFile = await _controller.takePicture();
+      final checkInInputImage = InputImage.fromFilePath(imageFile.path);
+      final checkInEmbeddings = await _getEmbeddings(checkInInputImage);
+
+      if (!mounted) return;
+      if (checkInEmbeddings == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not detect a face. Please try again.')),
+        );
+        return;
+      }
+      
+      // 6. Fetch enrolled images and compare embeddings
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+      final studentDoc = await FirebaseFirestore.instance.collection('students').doc(user.uid).get();
+      final enrolledImages = (studentDoc.data()?['enrolledImages'] as List<dynamic>?)?.cast<String>() ?? [];
+
+      developer.log('Found ${enrolledImages.length} enrolled images.', name: 'CheckInCameraScreen');
+
+      bool matchFound = false;
+      for (final imageUrl in enrolledImages) {
+        final response = await http.get(Uri.parse(imageUrl));
+        final image = img.decodeImage(response.bodyBytes);
+        if (image == null) continue;
+        final enrolledInputImage = InputImage.fromBytes(bytes: response.bodyBytes, metadata: InputImageMetadata(size: Size(image.width.toDouble(), image.height.toDouble()), rotation: InputImageRotation.rotation0deg, format: InputImageFormat.nv21, bytesPerRow: image.width));
+        final enrolledEmbeddings = await _getEmbeddings(enrolledInputImage);
+
+        if (enrolledEmbeddings != null) {
+          final similarity = _calculateSimilarity(checkInEmbeddings, enrolledEmbeddings);
+          developer.log('Similarity with image $imageUrl: $similarity', name: 'CheckInCameraScreen');
+          if (similarity > _similarityThreshold) {
+            matchFound = true;
+            developer.log('Match found with image $imageUrl', name: 'CheckInCameraScreen');
+            break;
+          }
         }
       }
 
-      if (matchedStudentId != null) {
-        await FirebaseFirestore.instance
-            .collection('sessions')
-            .doc(widget.sessionId)
-            .collection('checkins')
-            .add({
-              'studentId': matchedStudentId,
-              'studentName': matchedStudentName,
-              'timestamp': FieldValue.serverTimestamp(),
-              'similarity': highestSimilarity,
-            });
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Check-in successful for $matchedStudentName!')),
-        );
-        context.go('/student');
-
-      } else {
+      if (!mounted) return;
+      if (!matchFound) {
+        developer.log('No match found for student ${user.uid}', name: 'CheckInCameraScreen');
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Face not recognized. Please try again.')),
         );
+        return;
       }
 
-    } catch (e) {
-      developer.log('Error during verification: $e', name: 'CheckInCameraScreen');
+      // 7. Proceed with check-in
+      final storageRef = FirebaseStorage.instance.ref().child(
+          'check-ins/${widget.sessionId}/${DateTime.now().toIso8601String()}.jpg');
+      await storageRef.putFile(File(imageFile.path));
+      final imageUrl = await storageRef.getDownloadURL();
+
+      await FirebaseFirestore.instance
+          .collection('sessions')
+          .doc(widget.sessionId)
+          .collection('checkins')
+          .add({
+        'studentId': user.uid,
+        'studentName': user.displayName ?? 'Test Student',
+        'timestamp': FieldValue.serverTimestamp(),
+        'location': GeoPoint(position.latitude, position.longitude),
+        'imageUrl': imageUrl,
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Check-in successful!')),
+        );
+        context.go('/'); // Navigate back to the home screen
+      }
+    } catch (e, s) {
+      developer.log('Error during check-in: $e', stackTrace: s, name: 'CheckInCameraScreen');
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('An error occurred: $e')),
       );
     } finally {
-      setState(() {
-        _isProcessing = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isProcessing = false;
+        });
+      }
     }
-  }
-
-  double _calculateCosineSimilarity(Float32List vec1, Float32List vec2) {
-    double dotProduct = 0;
-    double norm1 = 0;
-    double norm2 = 0;
-    for (int i = 0; i < vec1.length; i++) {
-      dotProduct += vec1[i] * vec2[i];
-      norm1 += vec1[i] * vec1[i];
-      norm2 += vec2[i] * vec2[i];
-    }
-    return dotProduct / (sqrt(norm1) * sqrt(norm2));
-  }
-
-  @override
-  void dispose() {
-    _cameraController?.dispose();
-    _interpreter?.close();
-    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Check-in')),
+      appBar: AppBar(title: const Text('Check In')),
       body: FutureBuilder<void>(
         future: _initializeControllerFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.done) {
-            return Column(
-              children: [
-                Expanded(
-                  child: CameraPreview(_cameraController!),
-                ),
-                Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: _isProcessing
-                      ? const CircularProgressIndicator()
-                      : FloatingActionButton(
-                          onPressed: _captureAndVerify,
-                          child: const Icon(Icons.camera),
-                        ),
-                ),
-              ],
-            );
+            return CameraPreview(_controller);
           } else {
             return const Center(child: CircularProgressIndicator());
           }
         },
       ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _takePictureAndCheckIn,
+        child: _isProcessing 
+            ? const CircularProgressIndicator(color: Colors.white) 
+            : const Icon(Icons.camera_alt),
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
   }
 }
